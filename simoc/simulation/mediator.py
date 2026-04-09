@@ -43,6 +43,7 @@ class InteractionMediator:
         birth_death: BirthDeathTable,
         rng: np.random.Generator,
         config: SimulationConfig,
+        activity_type_composition: dict[str, dict[str, float]] | None = None,
     ):
         self.env = env
         self.type_classification = type_classification
@@ -84,6 +85,12 @@ class InteractionMediator:
         # Key: (source_type, target_type) from binding policy
         # Value: list of target agents ready for binding
         self._binding_queues: dict[tuple[str, str], list] = defaultdict(list)
+
+        # Activity-type composition (learned from real log)
+        self._activity_type_composition = activity_type_composition or {}
+
+        # Master data pools: {type -> [object_ids]}
+        self._master_data_pool: dict[str, list[str]] = defaultdict(list)
 
         # Precompute binding thresholds from discovered cardinality
         self._binding_thresholds: dict[tuple[str, str], int] = {}
@@ -148,6 +155,9 @@ class InteractionMediator:
         self._objects.append(
             SimulatedObject(object_id=agent.object_id, object_type=agent.object_type)
         )
+
+    def add_to_master_data_pool(self, object_type: str, object_id: str) -> None:
+        self._master_data_pool[object_type].append(object_id)
 
     def _record_o2o(self, o2o: SimulatedO2O) -> None:
         """Record an O2O relation and update the lookup index."""
@@ -547,23 +557,58 @@ class InteractionMediator:
     # Transitive co-objects
     # ------------------------------------------------------------------
 
-    def get_transitive_co_objects(self, agent: Agent) -> list[tuple[str, str]]:
-        """Return objects that should co-occur in this agent's events.
+    def get_event_co_objects(
+        self, agent: Agent, activity: str
+    ) -> list[tuple[str, str]]:
+        """Return co-objects matching the real log's type composition.
 
-        Includes direct O2O links (products, employees, packages) but
-        NOT the full parent chain, since parents don't always co-occur
-        in every child event.
+        Only includes types that actually participate in this activity
+        in the real log. Draws from O2O links, parent-child relations,
+        and master data pools as needed.
         """
-        co: set[tuple[str, str]] = set()
+        composition = self._activity_type_composition.get(str(activity), {})
+        if not composition:
+            return []
+
+        co: list[tuple[str, str]] = []
         oid = agent.object_id
         otype = agent.object_type
+        seen: set[str] = {oid}
 
-        # Direct O2O links only (products via "is a", employees via roles, etc.)
-        for linked_id, linked_type in self._o2o_by_object.get(oid, []):
-            co.add((linked_id, linked_type))
+        for cotype, expected_count in composition.items():
+            if cotype == otype:
+                continue
 
-        co.discard((oid, otype))
-        return list(co)
+            n_needed = max(1, round(expected_count))
+            candidates: list[tuple[str, str]] = []
+
+            # Source 1: O2O-linked objects of this type
+            for lid, lt in self._o2o_by_object.get(oid, []):
+                if lt == cotype and lid not in seen:
+                    candidates.append((lid, lt))
+
+            # Source 2: Parent of this type
+            parent_id = self._child_parent.get(oid)
+            if parent_id and parent_id in self._agents:
+                parent = self._agents[parent_id]
+                if parent.object_type == cotype and parent_id not in seen:
+                    candidates.append((parent_id, cotype))
+
+            # Source 3: Master data pool
+            if not candidates and cotype in self._master_data_pool:
+                pool = self._master_data_pool[cotype]
+                if pool:
+                    n_pick = min(n_needed, len(pool))
+                    indices = self.rng.choice(len(pool), size=n_pick, replace=False)
+                    candidates = [(pool[i], cotype) for i in indices]
+
+            # Take up to n_needed, skip already-seen
+            for cid, ct in candidates[:n_needed]:
+                if cid not in seen:
+                    co.append((cid, ct))
+                    seen.add(cid)
+
+        return co
 
     # ------------------------------------------------------------------
     # Output collection

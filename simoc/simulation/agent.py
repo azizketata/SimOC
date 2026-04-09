@@ -38,11 +38,11 @@ class Agent:
     def log_event(self, activity: str, co_objects: list[tuple[str, str]]) -> None:
         """Record an event at the current simulation time.
 
-        Automatically includes transitive co-objects (parent chain,
-        linked products/employees) for realistic event composition.
+        Automatically includes co-objects based on the real log's
+        per-activity type composition template.
         """
-        transitive = self.mediator.get_transitive_co_objects(self)
-        combined = [(self.object_id, self.object_type)] + co_objects + transitive
+        template_co = self.mediator.get_event_co_objects(self, activity)
+        combined = [(self.object_id, self.object_type)] + co_objects + template_co
 
         # Deduplicate while preserving order
         seen: set[tuple[str, str]] = set()
