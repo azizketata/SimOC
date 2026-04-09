@@ -262,6 +262,18 @@ def classify_types(
                 best["type_1"],
             )
 
+    # Post-check: if a derived type's parent is master data, the parent is
+    # a resource/reference, not a real spawning parent. Promote child to root.
+    for t in list(parent_map.keys()):
+        parent = parent_map[t]
+        if parent in master_data_types:
+            logger.info(
+                "Promoting '%s' to root: parent '%s' is master data (resource).",
+                t, parent,
+            )
+            del parent_map[t]
+            classification[t] = "root"
+
     # Break any remaining cycles by demoting the type with fewer instances
     # (types with fewer instances are more likely to be master data / root)
     _break_cycles(parent_map, classification, object_types, oig)
