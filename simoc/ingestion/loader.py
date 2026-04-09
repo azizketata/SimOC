@@ -55,6 +55,25 @@ def load_ocel(file_path: str | Path) -> OCELData:
     validate_ocel(ocel)
 
     # Build core data structures
+    data = ocel_to_oceldata(ocel, source_file=str(file_path))
+
+    logger.info(
+        "Loaded %d events, %d objects (%d types), %d O2O relations.",
+        len(data.events),
+        len(data.objects),
+        len(data.object_types),
+        len(data.o2o),
+    )
+    return data
+
+
+def ocel_to_oceldata(ocel, source_file: str = "<synthetic>") -> OCELData:
+    """Build OCELData from a PM4Py OCEL object (no file I/O, no validation).
+
+    This is the core conversion logic used by both ``load_ocel`` (after
+    file loading and validation) and the evaluation module (for converting
+    simulation output back to OCELData format).
+    """
     e2o_index = _build_e2o_index(ocel)
     objects_df = _build_objects_df(ocel)
     events_df = _build_events_df(ocel)
@@ -62,24 +81,15 @@ def load_ocel(file_path: str | Path) -> OCELData:
     lifecycles = _build_lifecycles(ocel, events_df, e2o_index)
     object_types = sorted(objects_df["object_type"].unique().tolist())
 
-    data = OCELData(
+    return OCELData(
         events=events_df,
         objects=objects_df,
         o2o=o2o_df,
         lifecycles=lifecycles,
         e2o_index=e2o_index,
-        source_file=str(file_path),
+        source_file=source_file,
         object_types=object_types,
     )
-
-    logger.info(
-        "Loaded %d events, %d objects (%d types), %d O2O relations.",
-        len(events_df),
-        len(objects_df),
-        len(object_types),
-        len(o2o_df),
-    )
-    return data
 
 
 # ------------------------------------------------------------------
