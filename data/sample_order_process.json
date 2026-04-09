@@ -1,0 +1,200 @@
+{
+  "objectTypes": [
+    {"name": "order", "attributes": []},
+    {"name": "item", "attributes": [{"name": "category", "type": "string"}]},
+    {"name": "delivery", "attributes": []}
+  ],
+  "eventTypes": [
+    {"name": "Create Order", "attributes": []},
+    {"name": "Add Item", "attributes": []},
+    {"name": "Confirm Order", "attributes": []},
+    {"name": "Pick Item", "attributes": []},
+    {"name": "Pack Order", "attributes": []},
+    {"name": "Ship", "attributes": []},
+    {"name": "Deliver", "attributes": []}
+  ],
+  "objects": [
+    {
+      "id": "order_1",
+      "type": "order",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "item_1", "qualifier": "contains"},
+        {"objectId": "item_2", "qualifier": "contains"}
+      ]
+    },
+    {
+      "id": "order_2",
+      "type": "order",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "item_3", "qualifier": "contains"}
+      ]
+    },
+    {
+      "id": "item_1",
+      "type": "item",
+      "attributes": [{"name": "category", "type": "string", "value": "electronics"}],
+      "relationships": []
+    },
+    {
+      "id": "item_2",
+      "type": "item",
+      "attributes": [{"name": "category", "type": "string", "value": "clothing"}],
+      "relationships": []
+    },
+    {
+      "id": "item_3",
+      "type": "item",
+      "attributes": [{"name": "category", "type": "string", "value": "electronics"}],
+      "relationships": []
+    },
+    {
+      "id": "delivery_1",
+      "type": "delivery",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "order_1", "qualifier": "delivers"},
+        {"objectId": "order_2", "qualifier": "delivers"}
+      ]
+    }
+  ],
+  "events": [
+    {
+      "id": "e1",
+      "type": "Create Order",
+      "time": "2024-01-10T08:00:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "order_1", "qualifier": "involved"}
+      ]
+    },
+    {
+      "id": "e2",
+      "type": "Add Item",
+      "time": "2024-01-10T08:05:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "order_1", "qualifier": "involved"},
+        {"objectId": "item_1", "qualifier": "involved"}
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "Add Item",
+      "time": "2024-01-10T08:10:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "order_1", "qualifier": "involved"},
+        {"objectId": "item_2", "qualifier": "involved"}
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "Create Order",
+      "time": "2024-01-10T09:00:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "order_2", "qualifier": "involved"}
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "Add Item",
+      "time": "2024-01-10T09:05:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "order_2", "qualifier": "involved"},
+        {"objectId": "item_3", "qualifier": "involved"}
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "Confirm Order",
+      "time": "2024-01-10T10:00:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "order_1", "qualifier": "involved"}
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "Pick Item",
+      "time": "2024-01-10T11:00:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "item_1", "qualifier": "involved"}
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "Pick Item",
+      "time": "2024-01-10T11:30:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "item_2", "qualifier": "involved"}
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "Confirm Order",
+      "time": "2024-01-10T12:00:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "order_2", "qualifier": "involved"}
+      ]
+    },
+    {
+      "id": "e10",
+      "type": "Pick Item",
+      "time": "2024-01-10T12:30:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "item_3", "qualifier": "involved"}
+      ]
+    },
+    {
+      "id": "e11",
+      "type": "Pack Order",
+      "time": "2024-01-10T13:00:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "order_1", "qualifier": "involved"},
+        {"objectId": "item_1", "qualifier": "involved"},
+        {"objectId": "item_2", "qualifier": "involved"}
+      ]
+    },
+    {
+      "id": "e12",
+      "type": "Pack Order",
+      "time": "2024-01-10T14:00:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "order_2", "qualifier": "involved"},
+        {"objectId": "item_3", "qualifier": "involved"}
+      ]
+    },
+    {
+      "id": "e13",
+      "type": "Ship",
+      "time": "2024-01-10T15:00:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "order_1", "qualifier": "involved"},
+        {"objectId": "order_2", "qualifier": "involved"},
+        {"objectId": "delivery_1", "qualifier": "involved"}
+      ]
+    },
+    {
+      "id": "e14",
+      "type": "Deliver",
+      "time": "2024-01-10T18:00:00Z",
+      "attributes": [],
+      "relationships": [
+        {"objectId": "order_1", "qualifier": "involved"},
+        {"objectId": "order_2", "qualifier": "involved"},
+        {"objectId": "delivery_1", "qualifier": "involved"}
+      ]
+    }
+  ]
+}
