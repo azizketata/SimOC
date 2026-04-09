@@ -203,23 +203,52 @@ def discover_binding(
         logger.info("No O2O relations found. No binding to discover.")
         return {}
 
-    # Build birth co-object lookup
+    # Build birth co-object and birth timestamp lookups
     birth_co_lookup: dict[str, set[str]] = {}
+    birth_ts_lookup: dict[str, pd.Timestamp] = {}
     for _, row in birth_death.df.iterrows():
         oid = row["object_id"]
         birth_co_lookup[oid] = {co_oid for co_oid, _ in row["birth_co_objects"]}
+        birth_ts_lookup[oid] = row["birth_timestamp"]
 
     # Check each O2O relation: spawning or binding?
+    # Spawning: both objects born at the same time (or target born at source's birth)
+    # Binding: one object PRE-EXISTED before the other was born, then they
+    #          co-occur at the newer object's birth event. The pre-existing
+    #          object was BOUND into the newer one, not spawned by it.
     binding_relations: list[dict] = []
     for _, row in data.o2o.iterrows():
         src = row["source_object_id"]
         tgt = row["target_object_id"]
 
-        # Check if either appears in the other's birth co-objects
         src_at_tgt_birth = src in birth_co_lookup.get(tgt, set())
         tgt_at_src_birth = tgt in birth_co_lookup.get(src, set())
 
-        if not src_at_tgt_birth and not tgt_at_src_birth:
+        src_ts = birth_ts_lookup.get(src)
+        tgt_ts = birth_ts_lookup.get(tgt)
+
+        is_binding = False
+
+        if src_ts is not None and tgt_ts is not None:
+            if tgt_ts < src_ts and tgt_at_src_birth:
+                # Target pre-existed, then appeared at SOURCE's birth.
+                # The SOURCE is the new object absorbing old targets → BINDING.
+                # Example: package (src, new) born with pre-existing items (tgt, old)
+                is_binding = True
+            elif src_ts < tgt_ts and src_at_tgt_birth:
+                # Source pre-existed, target is born at this event.
+                # The TARGET is the new object created by the source → SPAWNING.
+                # Example: order (src, old) creates item (tgt, new)
+                is_binding = False
+            elif not src_at_tgt_birth and not tgt_at_src_birth:
+                # Neither present at the other's birth → BINDING (created later)
+                is_binding = True
+            # else: born at the same event and co-present → SPAWNING
+        else:
+            if not src_at_tgt_birth and not tgt_at_src_birth:
+                is_binding = True
+
+        if is_binding:
             binding_relations.append(
                 {
                     "source": src,
