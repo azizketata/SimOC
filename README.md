@@ -7,11 +7,11 @@ SimOC automatically discovers per-object-type agent behaviors and cross-type int
 | Feature | Knopp et al. (ICPM 2023) | AgentSimulator (ICPM 2024) | **SimOC** |
 |---------|--------------------------|---------------------------|-----------|
 | Discovers from event logs | Automated | Automated | Automated |
-| Object-centric (OCEL) | OCEL 1.0 | XES only | **OCEL 2.0** |
+| Object-centric (OCEL) | OCEL 2.0 | XES only | **OCEL 2.0** |
 | Agent-based architecture | OCPN tokens | Multi-agent | **Multi-agent** |
 | Agents = object types | N/A | Agents = resources | **Yes** |
 | Interaction patterns (spawn, sync, batch) | Partial (OCPN arcs) | No | **Yes** |
-| Produces synthetic OCEL 2.0 | OCEL 1.0 | XES | **Yes** |
+| Produces synthetic OCEL 2.0 | Yes | XES | **Yes** |
 
 ## Installation
 
