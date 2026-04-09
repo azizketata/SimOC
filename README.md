@@ -6,8 +6,8 @@ SimOC automatically discovers per-object-type agent behaviors and cross-type int
 
 |                              | Single-Case-Notion         | Object-Centric            |
 |------------------------------|----------------------------|---------------------------|
-| **Process-model-based sim.** | Simod (Dumas et al.)       | Lopez-Pintado et al. 2024 |
-| **Agent-based sim.**         | AgentSimulator (Park et al.) | **SimOC (this project)** |
+| **Process-model-based sim.** | Simod (Chapela-Campa et al.) | Lopez-Pintado et al. 2024 |
+| **Agent-based sim.**         | AgentSimulator (Kirchdorfer et al.) | **SimOC (this project)** |
 
 ## Installation
 
