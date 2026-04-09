@@ -77,6 +77,9 @@ class InteractionMediator:
         # Batch state
         self._batch_queues: dict[tuple[str, str], list[tuple]] = defaultdict(list)
 
+        # O2O index for fast co-object lookup
+        self._o2o_by_object: dict[str, list[tuple[str, str]]] = defaultdict(list)
+
         # Binding state: agents ready to be bound into a new object
         # Key: (source_type, target_type) from binding policy
         # Value: list of target agents ready for binding
@@ -146,6 +149,12 @@ class InteractionMediator:
             SimulatedObject(object_id=agent.object_id, object_type=agent.object_type)
         )
 
+    def _record_o2o(self, o2o: SimulatedO2O) -> None:
+        """Record an O2O relation and update the lookup index."""
+        self._o2o_relations.append(o2o)
+        self._o2o_by_object[o2o.source_id].append((o2o.target_id, o2o.target_type))
+        self._o2o_by_object[o2o.target_id].append((o2o.source_id, o2o.source_type))
+
     def record_event(self, event: SimulatedEvent) -> None:
         self._events.append(event)
 
@@ -201,7 +210,7 @@ class InteractionMediator:
                 self._child_parent[child_id] = parent.object_id
 
                 # Record O2O relation
-                self._o2o_relations.append(
+                self._record_o2o(
                     SimulatedO2O(
                         source_id=parent.object_id,
                         source_type=parent_type,
@@ -505,7 +514,7 @@ class InteractionMediator:
 
         # Register O2O relations (source -> each target)
         for target in bound_targets:
-            self._o2o_relations.append(
+            self._record_o2o(
                 SimulatedO2O(
                     source_id=new_id,
                     source_type=src_type,
@@ -533,6 +542,28 @@ class InteractionMediator:
             "Binding: created %s with %d %s targets at t=%.0f",
             new_id, n_bind, tgt_type, self.env.now,
         )
+
+    # ------------------------------------------------------------------
+    # Transitive co-objects
+    # ------------------------------------------------------------------
+
+    def get_transitive_co_objects(self, agent: Agent) -> list[tuple[str, str]]:
+        """Return objects that should co-occur in this agent's events.
+
+        Includes direct O2O links (products, employees, packages) but
+        NOT the full parent chain, since parents don't always co-occur
+        in every child event.
+        """
+        co: set[tuple[str, str]] = set()
+        oid = agent.object_id
+        otype = agent.object_type
+
+        # Direct O2O links only (products via "is a", employees via roles, etc.)
+        for linked_id, linked_type in self._o2o_by_object.get(oid, []):
+            co.add((linked_id, linked_type))
+
+        co.discard((oid, otype))
+        return list(co)
 
     # ------------------------------------------------------------------
     # Output collection

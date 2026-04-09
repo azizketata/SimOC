@@ -36,13 +36,27 @@ class Agent:
         self.completed_activities: list[str] = []
 
     def log_event(self, activity: str, co_objects: list[tuple[str, str]]) -> None:
-        """Record an event at the current simulation time."""
-        all_objects = [(self.object_id, self.object_type)] + co_objects
+        """Record an event at the current simulation time.
+
+        Automatically includes transitive co-objects (parent chain,
+        linked products/employees) for realistic event composition.
+        """
+        transitive = self.mediator.get_transitive_co_objects(self)
+        combined = [(self.object_id, self.object_type)] + co_objects + transitive
+
+        # Deduplicate while preserving order
+        seen: set[tuple[str, str]] = set()
+        unique = []
+        for pair in combined:
+            if pair not in seen:
+                seen.add(pair)
+                unique.append(pair)
+
         event = SimulatedEvent(
             event_id=self.mediator.next_event_id(),
             activity=activity,
             timestamp=self.env.now,
-            objects=all_objects,
+            objects=unique,
         )
         self.mediator.record_event(event)
 
