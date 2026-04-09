@@ -115,6 +115,19 @@ class InteractionMediator:
                         type_rows["birth_activity"].mode().iloc[0]
                     )
 
+    def _precompute_binding_thresholds(self) -> None:
+        """Compute how many target objects trigger a binding event."""
+        for (src_type, tgt_type), policy in self.patterns.binding_policies.items():
+            if policy.capacity_dist is not None:
+                threshold = max(1, int(policy.capacity_dist.rvs(size=1, rng=self.rng)[0]))
+            else:
+                # Estimate mean group size: total relations / estimated sources
+                # Use sqrt as a heuristic when we don't have exact source count
+                threshold = max(2, round(policy.n_instances ** 0.5))
+                # Cap at reasonable size
+                threshold = min(threshold, 20)
+            self._binding_thresholds[(src_type, tgt_type)] = threshold
+
     # ------------------------------------------------------------------
     # ID generation and registration
     # ------------------------------------------------------------------

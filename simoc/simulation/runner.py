@@ -37,7 +37,7 @@ class SimulationRunner:
         self,
         duration: float,
         seed: int = 42,
-        max_sync_wait: float = 86400.0,
+        max_sync_wait: float | None = None,
         batch_timeout: float = 7200.0,
     ) -> SimulationResult:
         """Run a simulation for the given duration.
@@ -54,6 +54,10 @@ class SimulationRunner:
         SimulationResult
             All simulated events, objects, and O2O relations.
         """
+        # Default sync timeout: 10% of simulation duration (generous but not infinite)
+        if max_sync_wait is None:
+            max_sync_wait = max(3600.0, duration * 0.1)
+
         config = SimulationConfig(
             duration=duration,
             seed=seed,
