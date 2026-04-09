@@ -137,7 +137,7 @@ def build_random_binding_runner(
     for key in modified_ip.binding_policies:
         policy = modified_ip.binding_policies[key]
         policy.model = None
-        policy.hard_constraints = {}
+        policy.hard_constraints = {"mode": "random"}
         policy.feature_names = []
 
     return SimulationRunner(discovery_result, behavioral_profile, modified_ip)

@@ -462,10 +462,35 @@ class InteractionMediator:
         queue = self._binding_queues[key]
         threshold = self._binding_thresholds.get(key, 2)
 
-        # Take up to threshold targets from the queue
+        # Select targets: affinity-based (SimOC) or FIFO (random baseline)
         n_bind = min(len(queue), threshold)
-        bound_targets = queue[:n_bind]
-        self._binding_queues[key] = queue[n_bind:]
+
+        if policy.hard_constraints.get("mode") == "random":
+            # Random baseline: shuffle queue, then take first N (no affinity)
+            shuffled = list(queue)
+            self.rng.shuffle(shuffled)
+            bound_targets = shuffled[:n_bind]
+            self._binding_queues[key] = shuffled[n_bind:]
+        else:
+            # SimOC: parent-affinity greedy selection
+            # Pick seed, then prefer items sharing a parent with the group
+            seed = queue.pop(0)
+            selected = [seed]
+            remaining = list(queue)
+            while len(selected) < n_bind and remaining:
+                parents_in_group = {
+                    self._child_parent.get(s.object_id) for s in selected
+                } - {None}
+                # Find first candidate sharing a parent; fallback to first
+                best_idx = 0
+                if parents_in_group:
+                    for i, c in enumerate(remaining):
+                        if self._child_parent.get(c.object_id) in parents_in_group:
+                            best_idx = i
+                            break
+                selected.append(remaining.pop(best_idx))
+            bound_targets = selected
+            self._binding_queues[key] = remaining
 
         # Create the new source object (e.g., package)
         new_id = self.generate_id(src_type)
