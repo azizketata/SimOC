@@ -4,10 +4,14 @@ Agent-based simulation discovery for object-centric processes from OCEL 2.0 even
 
 SimOC automatically discovers per-object-type agent behaviors and cross-type interaction patterns (spawning, synchronization, binding, batching, release) from real event data, then simulates forward to produce synthetic OCEL 2.0 traces.
 
-|                              | Single-Case-Notion         | Object-Centric            |
-|------------------------------|----------------------------|---------------------------|
-| **Process-model-based sim.** | Simod (Chapela-Campa et al.) | Lopez-Pintado et al. 2024 |
-| **Agent-based sim.**         | AgentSimulator (Kirchdorfer et al.) | **SimOC (this project)** |
+| Feature | Knopp et al. (ICPM 2023) | AgentSimulator (ICPM 2024) | **SimOC** |
+|---------|--------------------------|---------------------------|-----------|
+| Discovers from event logs | Automated | Automated | Automated |
+| Object-centric (OCEL) | OCEL 1.0 | XES only | **OCEL 2.0** |
+| Agent-based architecture | OCPN tokens | Multi-agent | **Multi-agent** |
+| Agents = object types | N/A | Agents = resources | **Yes** |
+| Interaction patterns (spawn, sync, batch) | Partial (OCPN arcs) | No | **Yes** |
+| Produces synthetic OCEL 2.0 | OCEL 1.0 | XES | **Yes** |
 
 ## Installation
 
