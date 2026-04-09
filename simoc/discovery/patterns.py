@@ -606,22 +606,24 @@ def _classify_trigger_type(
 
 def _find_binding_activity(data: OCELData, relations: list[dict]) -> str:
     """Find the activity where binding relations are created."""
+    # Pre-build event lookups for O(1) access
+    event_ts: dict[str, pd.Timestamp] = {}
+    event_act: dict[str, str] = {}
+    for _, row in data.events.iterrows():
+        event_ts[row["event_id"]] = row["timestamp"]
+        event_act[row["event_id"]] = row["activity"]
+
     activities: list[str] = []
-    for rel in relations:
+    # Sample up to 500 relations for performance
+    sample = relations if len(relations) <= 500 else relations[:500]
+    for rel in sample:
         src, tgt = rel["source"], rel["target"]
         src_events = data.e2o_index.object_to_events.get(src, set())
         tgt_events = data.e2o_index.object_to_events.get(tgt, set())
         shared = src_events & tgt_events
         if shared:
-            # First shared event (by timestamp) is the binding event
-            event_ts = {}
-            event_act = {}
-            for _, row in data.events.iterrows():
-                if row["event_id"] in shared:
-                    event_ts[row["event_id"]] = row["timestamp"]
-                    event_act[row["event_id"]] = row["activity"]
-            if event_ts:
-                first_eid = min(event_ts, key=event_ts.get)
+            first_eid = min(shared, key=lambda e: event_ts.get(e, pd.Timestamp.max))
+            if first_eid in event_act:
                 activities.append(event_act[first_eid])
 
     if activities:
