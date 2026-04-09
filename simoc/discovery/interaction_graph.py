@@ -29,7 +29,22 @@ def discover_interaction_graph(
     """Orchestrator: run Tasks 2.1–2.3 in sequence."""
     birth_death = compute_birth_death(data)
     oig = build_oig(data, birth_death)
-    type_class = classify_types(oig, data.object_types)
+
+    # Compute per-type counts and lifecycle lengths for master data detection
+    object_counts = data.objects["object_type"].value_counts().to_dict()
+    avg_lifecycle_lengths: dict[str, float] = {}
+    oid_to_type = data.objects.set_index("object_id")["object_type"].to_dict()
+    type_lc_lengths: dict[str, list[int]] = {t: [] for t in data.object_types}
+    for oid, lc in data.lifecycles.items():
+        otype = oid_to_type.get(oid)
+        if otype:
+            type_lc_lengths[otype].append(len(lc))
+    for t, lengths in type_lc_lengths.items():
+        avg_lifecycle_lengths[t] = sum(lengths) / len(lengths) if lengths else 0
+
+    type_class = classify_types(
+        oig, data.object_types, object_counts, avg_lifecycle_lengths
+    )
     logger.info(
         "Type classification: %s",
         {t: type_class.classification[t] for t in sorted(type_class.classification)},
@@ -174,18 +189,53 @@ def build_oig(data: OCELData, birth_death: BirthDeathTable) -> ObjectInteraction
 
 
 def classify_types(
-    oig: ObjectInteractionGraph, object_types: list[str]
+    oig: ObjectInteractionGraph,
+    object_types: list[str],
+    object_counts: dict[str, int] | None = None,
+    avg_lifecycle_lengths: dict[str, float] | None = None,
 ) -> TypeClassification:
-    """Task 2.3: Classify each object type as root or derived."""
+    """Task 2.3: Classify each object type as root or derived.
+
+    Parameters
+    ----------
+    object_counts : dict, optional
+        {type -> instance count}. Used for master data detection.
+    avg_lifecycle_lengths : dict, optional
+        {type -> avg number of events per object}. Used for master data detection.
+    """
     classification: dict[str, str] = {}
     parent_map: dict[str, str] = {}
 
+    # Pre-classify master data types as root.
+    # Master data = few instances with very long lifecycles (reference entities).
+    master_data_types: set[str] = set()
+    if object_counts and avg_lifecycle_lengths and len(object_types) > 3:
+        median_count = sorted(object_counts.values())[len(object_counts) // 2]
+        for t in object_types:
+            count = object_counts.get(t, 0)
+            avg_lc = avg_lifecycle_lengths.get(t, 0)
+            # Heuristic: < 5% of median instance count AND lifecycle > 50 events
+            if count < max(30, median_count * 0.05) and avg_lc > 50:
+                master_data_types.add(t)
+                classification[t] = "root"
+                logger.info(
+                    "Type '%s' detected as master data (count=%d, avg_lifecycle=%.0f). Forcing ROOT.",
+                    t, count, avg_lc,
+                )
+
     for t in object_types:
+        if t in master_data_types:
+            continue  # already classified as root
         # Find candidate parents: types T' where >80% of T's births have T' present
-        candidates = oig.df[
+        # AND either T' is born before T OR T' has O2O relations to T
+        # (O2O direction is strong structural evidence of parent-child)
+        base = oig.df[
             (oig.df["type_2"] == t)
             & (oig.df["type_1"] != t)
             & (oig.df["t2_birth_has_t1_pct"] > 0.8)
+        ]
+        candidates = base[
+            (base["t1_born_first_pct"] > 0.5) | (base["o2o_count"] > 0)
         ]
 
         if candidates.empty:
@@ -194,8 +244,15 @@ def classify_types(
             classification[t] = "derived"
             parent_map[t] = candidates.iloc[0]["type_1"]
         else:
-            # Multiple candidates: pick highest percentage
-            best = candidates.loc[candidates["t2_birth_has_t1_pct"].idxmax()]
+            # Multiple candidates: prefer the one with O2O relations (strongest
+            # structural signal), then fall back to highest birth co-occurrence.
+            with_o2o = candidates[candidates["o2o_count"] > 0]
+            if len(with_o2o) == 1:
+                best = with_o2o.iloc[0]
+            elif len(with_o2o) > 1:
+                best = with_o2o.loc[with_o2o["o2o_count"].idxmax()]
+            else:
+                best = candidates.loc[candidates["t2_birth_has_t1_pct"].idxmax()]
             classification[t] = "derived"
             parent_map[t] = best["type_1"]
             logger.warning(
@@ -204,6 +261,10 @@ def classify_types(
                 candidates["type_1"].tolist(),
                 best["type_1"],
             )
+
+    # Break any remaining cycles by demoting the type with fewer instances
+    # (types with fewer instances are more likely to be master data / root)
+    _break_cycles(parent_map, classification, object_types, oig)
 
     # Validate DAG: no cycles in parent chain
     _validate_dag(parent_map)
@@ -214,6 +275,40 @@ def classify_types(
 # ------------------------------------------------------------------
 # Private helpers
 # ------------------------------------------------------------------
+
+
+def _break_cycles(
+    parent_map: dict[str, str],
+    classification: dict[str, str],
+    object_types: list[str],
+    oig,
+) -> None:
+    """Break cycles in parent mapping by promoting cycle members to root."""
+    max_iterations = len(object_types)
+    for _ in range(max_iterations):
+        # Find a cycle
+        cycle_found = False
+        for start in list(parent_map.keys()):
+            visited: set[str] = set()
+            current = start
+            while current in parent_map:
+                if current in visited:
+                    # Cycle detected — promote this type to root
+                    logger.warning(
+                        "Breaking cycle: promoting '%s' to root (was derived from '%s').",
+                        current,
+                        parent_map[current],
+                    )
+                    del parent_map[current]
+                    classification[current] = "root"
+                    cycle_found = True
+                    break
+                visited.add(current)
+                current = parent_map[current]
+            if cycle_found:
+                break
+        if not cycle_found:
+            break
 
 
 def _validate_dag(parent_map: dict[str, str]) -> None:
