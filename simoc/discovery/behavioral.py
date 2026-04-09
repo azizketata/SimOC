@@ -178,12 +178,14 @@ def discover_duration_models(
                 mask = np.abs(samples - mean) <= 3 * std
                 removed = (~mask).sum()
                 if removed > 0:
-                    logger.info(
+                    logger.debug(
                         "Removed %d outliers from (%s, %s).", removed, otype, activity
                     )
                 samples = samples[mask]
 
-        distribution = _fit_continuous(samples)
+        # Use empirical resampling for durations (non-parametric, preserves
+        # multi-modal and heavy-tailed shapes that parametric fits miss).
+        distribution = _make_empirical_continuous(samples)
         models[(otype, activity)] = DurationModel(
             object_type=otype,
             activity=activity,

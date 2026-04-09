@@ -84,10 +84,21 @@ class Agent:
 class RootAgent(Agent):
     """Agent for root object types (independent arrivals)."""
 
+    # Guard against infinite lifecycle loops (100% self-loop DFGs)
+    MAX_LIFECYCLE_STEPS = 500
+
     def lifecycle(self) -> Generator:
         current = self.mediator.get_start_activity(self.object_type)
+        step = 0
 
         while current is not None:
+            step += 1
+            if step > self.MAX_LIFECYCLE_STEPS:
+                logger.debug(
+                    "Lifecycle guard: %s exceeded %d steps, terminating.",
+                    self.object_id, self.MAX_LIFECYCLE_STEPS,
+                )
+                break
             co_objects: list[tuple[str, str]] = []
 
             # 1. Check sync (parent waits for children)
@@ -159,7 +170,16 @@ class DerivedAgent(Agent):
             dur = max(0.0, self.mediator.sample_duration(self.object_type, start_act))
             yield self.env.timeout(dur)
 
+        step = 0
         while current is not None:
+            step += 1
+            if step > RootAgent.MAX_LIFECYCLE_STEPS:
+                logger.debug(
+                    "Lifecycle guard: %s exceeded %d steps, terminating.",
+                    self.object_id, RootAgent.MAX_LIFECYCLE_STEPS,
+                )
+                break
+
             # Check if this is a sync point where I am the synced type
             # → signal readiness and terminate (parent will log the event)
             if self.mediator.is_child_sync_point(self, current):

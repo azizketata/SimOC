@@ -108,11 +108,18 @@ class SimulationRunner:
         # Collect results
         events = sorted(mediator.get_events(), key=lambda e: e.timestamp)
 
+        # Summary diagnostics
+        from collections import Counter
+        type_counts = Counter(o.object_type for o in mediator.get_objects())
+        act_counts = Counter(str(e.activity) for e in events)
         logger.info(
-            "Simulation complete: %d events, %d objects, %d O2O relations.",
+            "Simulation complete: %d events, %d objects, %d O2O. "
+            "Types: %s. Top activities: %s",
             len(events),
             len(mediator.get_objects()),
             len(mediator.get_o2o()),
+            dict(type_counts),
+            dict(act_counts.most_common(5)),
         )
 
         return SimulationResult(

@@ -383,12 +383,12 @@ def discover_batching(
             raw_batch_sizes=batch_sizes,
         )
         logger.info(
-            "Batching rule (%s, %s): trigger=%s, n=%d, sizes=%s",
+            "Batching rule (%s, %s): trigger=%s, n=%d, mean_size=%.1f",
             activity,
             otype,
             trigger_type,
             len(events),
-            batch_sizes,
+            np.mean(batch_sizes),
         )
 
     return rules

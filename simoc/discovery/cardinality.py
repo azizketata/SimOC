@@ -57,13 +57,14 @@ def compute_spawning_profiles(
             fitted=fitted,
             attribute_dependencies=attr_deps,
         )
+        import numpy as _np
         logger.info(
-            "Spawning (%s -> %s): counts=%s, best fit=%s (AIC=%.2f)",
+            "Spawning (%s -> %s): n=%d, mean=%.1f, fit=%s",
             parent_type,
             child_type,
-            counts,
+            len(counts),
+            _np.mean(counts),
             fitted.name,
-            fitted.aic,
         )
 
     return profiles
