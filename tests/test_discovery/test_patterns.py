@@ -75,9 +75,14 @@ class TestT4_2_SyncCondition:
 # ------------------------------------------------------------------
 
 class TestT4_3_Binding:
-    def test_no_binding_detected(self, interaction_patterns: InteractionPatterns):
-        """All O2O relations in fixture are spawning. No binding expected."""
-        assert len(interaction_patterns.binding_policies) == 0
+    def test_delivery_order_binding_detected(self, interaction_patterns: InteractionPatterns):
+        """delivery->order is binding: orders pre-exist before delivery is born at Ship.
+        order->item relations are spawning (items born after orders)."""
+        # delivery_1 born at Ship (15:00), orders born at Create Order (08:00/09:00)
+        # Orders pre-existed → binding, not spawning
+        assert len(interaction_patterns.binding_policies) == 1
+        key = ("delivery", "order")
+        assert key in interaction_patterns.binding_policies
 
 
 # ------------------------------------------------------------------
