@@ -1,13 +1,32 @@
-"""Object interaction discovery (Stages 2-4)."""
+"""Object interaction and behavioral discovery (Stages 2-4)."""
 
+from simoc.discovery.behavioral import (
+    discover_arrival_models,
+    discover_behavioral,
+    discover_branching_models,
+    discover_duration_models,
+    discover_resource_pools,
+)
 from simoc.discovery.cardinality import compute_spawning_profiles
 from simoc.discovery.data_structures import (
+    ArrivalModel,
+    BatchingRule,
+    BehavioralProfile,
+    BindingPolicy,
     BirthDeathTable,
+    BranchingModel,
+    ContinuousFittedDistribution,
     DiscoveryResult,
+    DurationModel,
     FittedDistribution,
+    InteractionPatterns,
     ObjectInteractionGraph,
+    ReleaseRule,
+    ResourcePool,
     SpawningProfile,
+    SynchronizationRule,
     TypeClassification,
+    TypeDFG,
 )
 from simoc.discovery.interaction_graph import (
     build_oig,
@@ -15,17 +34,46 @@ from simoc.discovery.interaction_graph import (
     compute_birth_death,
     discover_interaction_graph,
 )
+from simoc.discovery.patterns import (
+    discover_batching,
+    discover_binding,
+    discover_patterns,
+    discover_release,
+    discover_synchronization,
+)
 
 __all__ = [
+    "ArrivalModel",
+    "BatchingRule",
+    "BehavioralProfile",
+    "BindingPolicy",
     "BirthDeathTable",
+    "BranchingModel",
+    "ContinuousFittedDistribution",
     "DiscoveryResult",
+    "DurationModel",
+    "InteractionPatterns",
     "FittedDistribution",
     "ObjectInteractionGraph",
+    "ReleaseRule",
+    "ResourcePool",
     "SpawningProfile",
+    "SynchronizationRule",
     "TypeClassification",
+    "TypeDFG",
     "build_oig",
     "classify_types",
     "compute_birth_death",
     "compute_spawning_profiles",
+    "discover_arrival_models",
+    "discover_behavioral",
+    "discover_branching_models",
+    "discover_duration_models",
     "discover_interaction_graph",
+    "discover_batching",
+    "discover_binding",
+    "discover_patterns",
+    "discover_release",
+    "discover_resource_pools",
+    "discover_synchronization",
 ]

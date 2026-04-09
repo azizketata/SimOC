@@ -1,0 +1,588 @@
+"""Tasks 4.1–4.4: Interaction pattern discovery.
+
+Discovers synchronization, binding, batching, and release patterns
+from OCEL 2.0 event logs. This is the core novel contribution of SimOC.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections import Counter, defaultdict
+
+import numpy as np
+import pandas as pd
+
+from simoc.ingestion.data_structures import OCELData
+from simoc.discovery.data_structures import (
+    BatchingRule,
+    BindingPolicy,
+    BirthDeathTable,
+    ContinuousFittedDistribution,
+    InteractionPatterns,
+    ReleaseRule,
+    SynchronizationRule,
+    TypeClassification,
+)
+from simoc.discovery.behavioral import _fit_continuous
+from simoc.discovery.cardinality import _fit_cardinality, _group_children_by_parent
+
+logger = logging.getLogger(__name__)
+
+
+# ------------------------------------------------------------------
+# Public API
+# ------------------------------------------------------------------
+
+
+def discover_patterns(
+    data: OCELData,
+    birth_death: BirthDeathTable,
+    type_classification: TypeClassification,
+) -> InteractionPatterns:
+    """Orchestrator: discover all interaction patterns (Tasks 4.1–4.4)."""
+    sync_rules = discover_synchronization(data, birth_death, type_classification)
+    binding_policies = discover_binding(data, birth_death)
+    batching_rules = discover_batching(data, birth_death, type_classification)
+    release_rules = discover_release(data)
+
+    logger.info(
+        "Pattern discovery complete: %d sync, %d binding, %d batching, %d release.",
+        len(sync_rules),
+        len(binding_policies),
+        len(batching_rules),
+        len(release_rules),
+    )
+    return InteractionPatterns(
+        synchronization_rules=sync_rules,
+        binding_policies=binding_policies,
+        batching_rules=batching_rules,
+        release_rules=release_rules,
+    )
+
+
+# ------------------------------------------------------------------
+# Task 4.1: Synchronization Discovery
+# ------------------------------------------------------------------
+
+
+def discover_synchronization(
+    data: OCELData,
+    birth_death: BirthDeathTable,
+    type_classification: TypeClassification,
+) -> dict[tuple[str, str], SynchronizationRule]:
+    """Discover synchronization points where sibling objects converge."""
+    rules: dict[tuple[str, str], SynchronizationRule] = {}
+
+    # For each derived type, find events where children of the same parent converge
+    for child_type, parent_type in type_classification.parent_map.items():
+        parent_to_children = _group_children_by_parent(
+            data, birth_death, parent_type, child_type
+        )
+
+        # Reverse map: child_oid -> parent_oid
+        child_to_parent: dict[str, str] = {}
+        for pid, children in parent_to_children.items():
+            for cid in children:
+                child_to_parent[cid] = pid
+
+        # Scan events for sync points
+        # Key: (activity, child_type) -> list of sync instances
+        sync_instances: dict[str, list[dict]] = defaultdict(list)
+
+        for _, event_row in data.events.iterrows():
+            eid = event_row["event_id"]
+            activity = event_row["activity"]
+            ts = event_row["timestamp"]
+            related = event_row["related_objects"]
+
+            # Find children of each parent in this event
+            # Only count children that had prior events (not being born here)
+            parent_children_in_event: dict[str, list[str]] = defaultdict(list)
+            for oid, otype in related:
+                if otype == child_type and oid in child_to_parent:
+                    # Skip if this is the child's birth event (spawning, not sync)
+                    child_lc = data.lifecycles.get(oid, [])
+                    if child_lc and child_lc[0][0] == eid:
+                        continue  # born at this event
+                    pid = child_to_parent[oid]
+                    parent_children_in_event[pid].append(oid)
+
+            # Check if parent is also in the event (for sync, parent waits)
+            parent_oids_in_event = {oid for oid, otype in related if otype == parent_type}
+
+            for pid, children_present in parent_children_in_event.items():
+                total_children = len(parent_to_children.get(pid, []))
+                if total_children == 0:
+                    continue
+
+                # Sync requires: parent present AND at least 1 child
+                # (single-child parents count as trivial sync)
+                if pid not in parent_oids_in_event:
+                    continue
+
+                # Compute ready times for each child
+                ready_times = []
+                for cid in children_present:
+                    rt = _compute_ready_time(data.lifecycles[cid], eid)
+                    ready_times.append(rt)
+
+                if not ready_times:
+                    continue
+
+                earliest_ready = min(ready_times)
+                latest_ready = max(ready_times)
+                sync_delay = (ts - latest_ready).total_seconds()
+                wait_spread = (latest_ready - earliest_ready).total_seconds()
+
+                sync_instances[activity].append(
+                    {
+                        "event_id": eid,
+                        "parent_oid": pid,
+                        "children_present": len(children_present),
+                        "total_children": total_children,
+                        "sync_delay": sync_delay,
+                        "wait_spread": wait_spread,
+                    }
+                )
+
+        # Build rules from collected instances
+        for activity, instances in sync_instances.items():
+            if not instances:
+                continue
+
+            delays = [inst["sync_delay"] for inst in instances]
+            spreads = [inst["wait_spread"] for inst in instances]
+            children_present = [inst["children_present"] for inst in instances]
+            total_children = [inst["total_children"] for inst in instances]
+
+            condition = _classify_sync_condition(children_present, total_children)
+
+            delay_dist = _fit_continuous(np.array(delays))
+            nonzero_spreads = [s for s in spreads if s > 0]
+            spread_dist = (
+                _fit_continuous(np.array(nonzero_spreads))
+                if nonzero_spreads
+                else None
+            )
+
+            key = (activity, child_type)
+            rules[key] = SynchronizationRule(
+                activity=activity,
+                synced_type=child_type,
+                parent_type=parent_type,
+                condition=condition,
+                sync_delay_dist=delay_dist,
+                wait_spread_dist=spread_dist,
+                n_instances=len(instances),
+                raw_sync_delays=delays,
+                raw_wait_spreads=spreads,
+            )
+            logger.info(
+                "Sync rule (%s, %s): condition=%s, n=%d, mean_delay=%.0fs",
+                activity,
+                child_type,
+                condition,
+                len(instances),
+                np.mean(delays),
+            )
+
+    return rules
+
+
+# ------------------------------------------------------------------
+# Task 4.2: Binding Discovery
+# ------------------------------------------------------------------
+
+
+def discover_binding(
+    data: OCELData,
+    birth_death: BirthDeathTable,
+) -> dict[tuple[str, str], BindingPolicy]:
+    """Discover binding relations created mid-process (not at birth)."""
+    if data.o2o.empty:
+        logger.info("No O2O relations found. No binding to discover.")
+        return {}
+
+    # Build birth co-object lookup
+    birth_co_lookup: dict[str, set[str]] = {}
+    for _, row in birth_death.df.iterrows():
+        oid = row["object_id"]
+        birth_co_lookup[oid] = {co_oid for co_oid, _ in row["birth_co_objects"]}
+
+    # Check each O2O relation: spawning or binding?
+    binding_relations: list[dict] = []
+    for _, row in data.o2o.iterrows():
+        src = row["source_object_id"]
+        tgt = row["target_object_id"]
+
+        # Check if either appears in the other's birth co-objects
+        src_at_tgt_birth = src in birth_co_lookup.get(tgt, set())
+        tgt_at_src_birth = tgt in birth_co_lookup.get(src, set())
+
+        if not src_at_tgt_birth and not tgt_at_src_birth:
+            binding_relations.append(
+                {
+                    "source": src,
+                    "target": tgt,
+                    "source_type": row["source_type"],
+                    "target_type": row["target_type"],
+                    "qualifier": row.get("qualifier", ""),
+                }
+            )
+
+    if not binding_relations:
+        logger.info("All O2O relations are spawning. No binding detected.")
+        return {}
+
+    # Group binding relations by type pair
+    # Full binding ML pipeline would go here for real logs
+    logger.info(
+        "Found %d binding relations. ML pipeline not yet exercised "
+        "(requires richer dataset).",
+        len(binding_relations),
+    )
+
+    policies: dict[tuple[str, str], BindingPolicy] = {}
+    type_pairs: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for rel in binding_relations:
+        key = (rel["source_type"], rel["target_type"])
+        type_pairs[key].append(rel)
+
+    for (src_type, tgt_type), rels in type_pairs.items():
+        # Find the binding activity: first co-occurrence after birth
+        binding_activity = _find_binding_activity(data, rels)
+
+        policies[(src_type, tgt_type)] = BindingPolicy(
+            source_type=src_type,
+            target_type=tgt_type,
+            binding_activity=binding_activity,
+            model=None,
+            feature_names=[],
+            capacity_dist=None,
+            hard_constraints={},
+            n_instances=len(rels),
+            f1_score=None,
+        )
+
+    return policies
+
+
+# ------------------------------------------------------------------
+# Task 4.3: Batching Discovery
+# ------------------------------------------------------------------
+
+
+def discover_batching(
+    data: OCELData,
+    birth_death: BirthDeathTable,
+    type_classification: TypeClassification,
+) -> dict[tuple[str, str], BatchingRule]:
+    """Discover batching points where unrelated objects are grouped."""
+    # Build parent lookup for derived types
+    child_to_parent: dict[str, str] = {}
+    for child_type, parent_type in type_classification.parent_map.items():
+        parent_to_children = _group_children_by_parent(
+            data, birth_death, parent_type, child_type
+        )
+        for pid, children in parent_to_children.items():
+            for cid in children:
+                child_to_parent[cid] = pid
+
+    oid_to_type = data.objects.set_index("object_id")["object_type"].to_dict()
+
+    # Scan events for batching candidates
+    batch_events: dict[tuple[str, str], list[dict]] = defaultdict(list)
+
+    for _, event_row in data.events.iterrows():
+        eid = event_row["event_id"]
+        activity = event_row["activity"]
+        ts = event_row["timestamp"]
+        related = event_row["related_objects"]
+
+        # Group objects by type
+        objs_by_type: dict[str, list[str]] = defaultdict(list)
+        for oid, otype in related:
+            objs_by_type[otype].append(oid)
+
+        for otype, oids in objs_by_type.items():
+            if len(oids) < 2:
+                continue
+
+            # Check 1: Do they share a common parent? If yes, this is sync.
+            if _objects_share_parent(oids, child_to_parent):
+                continue
+
+            # Check 2: Do they have different ready times?
+            # If all came from the same preceding event, this is continuation.
+            preceding_events = set()
+            for oid in oids:
+                prev_eid = _get_preceding_event_id(data.lifecycles.get(oid, []), eid)
+                if prev_eid is not None:
+                    preceding_events.add(prev_eid)
+
+            if len(preceding_events) <= 1 and preceding_events:
+                # All objects came from the same event — continuation, not batching
+                continue
+
+            batch_events[(activity, otype)].append(
+                {
+                    "event_id": eid,
+                    "timestamp": ts,
+                    "batch_size": len(oids),
+                    "object_ids": oids,
+                }
+            )
+
+    # Build batching rules
+    rules: dict[tuple[str, str], BatchingRule] = {}
+    for (activity, otype), events in batch_events.items():
+        batch_sizes = [e["batch_size"] for e in events]
+        timestamps = [e["timestamp"] for e in events]
+
+        trigger_type, trigger_params = _classify_trigger_type(timestamps, batch_sizes)
+
+        size_dist = _fit_cardinality(batch_sizes)
+
+        key = (activity, otype)
+        rules[key] = BatchingRule(
+            activity=activity,
+            batched_type=otype,
+            trigger_type=trigger_type,
+            trigger_params=trigger_params,
+            batch_size_dist=size_dist,
+            n_instances=len(events),
+            raw_batch_sizes=batch_sizes,
+        )
+        logger.info(
+            "Batching rule (%s, %s): trigger=%s, n=%d, sizes=%s",
+            activity,
+            otype,
+            trigger_type,
+            len(events),
+            batch_sizes,
+        )
+
+    return rules
+
+
+# ------------------------------------------------------------------
+# Task 4.4: Release Discovery
+# ------------------------------------------------------------------
+
+
+def discover_release(data: OCELData) -> dict[tuple[str, str], ReleaseRule]:
+    """Discover where co-traveling object types decouple."""
+    oid_to_type = data.objects.set_index("object_id")["object_type"].to_dict()
+
+    # Find all co-occurring instance pairs and their shared events
+    co_pairs: dict[tuple[str, str], list[tuple[str, str, str]]] = defaultdict(list)
+    # Key: (type_1, type_2) sorted. Value: list of (oid1, oid2, last_shared_eid)
+
+    # Build pair co-occurrences
+    pair_events: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for eid, oids in data.e2o_index.event_to_objects.items():
+        oids_list = sorted(oids)
+        for i in range(len(oids_list)):
+            for j in range(i + 1, len(oids_list)):
+                oid1, oid2 = oids_list[i], oids_list[j]
+                t1, t2 = oid_to_type.get(oid1, ""), oid_to_type.get(oid2, "")
+                if t1 == t2:
+                    continue  # same type pairs not interesting for release
+                # Normalize order
+                if t1 > t2:
+                    oid1, oid2 = oid2, oid1
+                    t1, t2 = t2, t1
+                pair_events[(oid1, oid2)].append(eid)
+
+    # Build event timestamp lookup
+    event_ts: dict[str, pd.Timestamp] = {}
+    event_act: dict[str, str] = {}
+    for _, row in data.events.iterrows():
+        event_ts[row["event_id"]] = row["timestamp"]
+        event_act[row["event_id"]] = row["activity"]
+
+    # For each instance pair, find the last co-occurrence
+    release_candidates: dict[tuple[str, str], list[dict]] = defaultdict(list)
+
+    for (oid1, oid2), shared_eids in pair_events.items():
+        t1 = oid_to_type[oid1]
+        t2 = oid_to_type[oid2]
+        type_key = (t1, t2) if t1 <= t2 else (t2, t1)
+
+        # Find last shared event by timestamp
+        last_eid = max(shared_eids, key=lambda e: event_ts[e])
+        last_ts = event_ts[last_eid]
+        last_act = event_act[last_eid]
+
+        # Check if either object continues after the release event
+        lc1 = data.lifecycles.get(oid1, [])
+        lc2 = data.lifecycles.get(oid2, [])
+
+        o1_continues = any(ts > last_ts for _, _, ts in lc1)
+        o2_continues = any(ts > last_ts for _, _, ts in lc2)
+
+        if o1_continues or o2_continues:
+            # This is a release
+            release_candidates[type_key].append(
+                {
+                    "oid1": oid1,
+                    "oid2": oid2,
+                    "release_eid": last_eid,
+                    "release_activity": last_act,
+                }
+            )
+        # else: joint termination — not a release
+
+    # Aggregate release rules per type pair
+    rules: dict[tuple[str, str], ReleaseRule] = {}
+
+    for type_key, candidates in release_candidates.items():
+        if not candidates:
+            continue
+
+        # Count releases per activity
+        activity_counts = Counter(c["release_activity"] for c in candidates)
+        dominant_activity, dominant_count = activity_counts.most_common(1)[0]
+        total = len(candidates)
+        probability = dominant_count / total
+
+        condition = (
+            "deterministic"
+            if probability >= 0.9
+            else f"probabilistic(p={probability:.2f})"
+        )
+
+        rules[type_key] = ReleaseRule(
+            type_1=type_key[0],
+            type_2=type_key[1],
+            release_activity=dominant_activity,
+            release_condition=condition,
+            probability=probability,
+            n_instances=total,
+        )
+        logger.info(
+            "Release rule (%s, %s): activity=%s, condition=%s, n=%d",
+            type_key[0],
+            type_key[1],
+            dominant_activity,
+            condition,
+            total,
+        )
+
+    return rules
+
+
+# ------------------------------------------------------------------
+# Private helpers
+# ------------------------------------------------------------------
+
+
+def _compute_ready_time(
+    lifecycle: list[tuple[str, str, pd.Timestamp]], sync_eid: str
+) -> pd.Timestamp:
+    """Get timestamp of event immediately before sync_eid in lifecycle."""
+    for i, (eid, _, ts) in enumerate(lifecycle):
+        if eid == sync_eid:
+            if i > 0:
+                return lifecycle[i - 1][2]
+            return ts  # born at sync event
+    raise ValueError(f"Event {sync_eid} not found in lifecycle")
+
+
+def _classify_sync_condition(
+    children_present: list[int], total_children: list[int]
+) -> str:
+    """Classify sync condition as ALL, THRESHOLD, etc."""
+    if not children_present:
+        return "ALL"
+
+    all_present = sum(
+        1 for cp, tc in zip(children_present, total_children) if cp >= tc
+    )
+    fraction = all_present / len(children_present)
+
+    if fraction >= 0.9:
+        return "ALL"
+
+    median_fraction = np.median(
+        [cp / tc for cp, tc in zip(children_present, total_children) if tc > 0]
+    )
+    return f"THRESHOLD({median_fraction:.2f})"
+
+
+def _objects_share_parent(
+    oids: list[str], child_to_parent: dict[str, str]
+) -> bool:
+    """Check if all given oids share a common parent."""
+    parents = set()
+    for oid in oids:
+        parent = child_to_parent.get(oid)
+        if parent is None:
+            return False  # root type, no parent → can't share
+        parents.add(parent)
+
+    return len(parents) == 1
+
+
+def _get_preceding_event_id(
+    lifecycle: list[tuple[str, str, pd.Timestamp]], target_eid: str
+) -> str | None:
+    """Get the event_id immediately before target_eid in lifecycle."""
+    for i, (eid, _, _) in enumerate(lifecycle):
+        if eid == target_eid:
+            return lifecycle[i - 1][0] if i > 0 else None
+    return None
+
+
+def _classify_trigger_type(
+    timestamps: list[pd.Timestamp], batch_sizes: list[int]
+) -> tuple[str, dict[str, float]]:
+    """Classify batching trigger type."""
+    if len(timestamps) < 3:
+        return "unknown", {}
+
+    # Test schedule: low CV of inter-batch times
+    if len(timestamps) >= 2:
+        gaps = [
+            (timestamps[i + 1] - timestamps[i]).total_seconds()
+            for i in range(len(timestamps) - 1)
+        ]
+        mean_gap = np.mean(gaps)
+        if mean_gap > 0:
+            cv_gaps = np.std(gaps) / mean_gap
+            if cv_gaps < 0.3:
+                return "schedule", {"interval_seconds": mean_gap}
+
+    # Test threshold: low CV of batch sizes
+    mean_size = np.mean(batch_sizes)
+    if mean_size > 0:
+        cv_sizes = np.std(batch_sizes) / mean_size
+        if cv_sizes < 0.3:
+            return "threshold", {"threshold": float(mean_size)}
+
+    return "hybrid", {}
+
+
+def _find_binding_activity(data: OCELData, relations: list[dict]) -> str:
+    """Find the activity where binding relations are created."""
+    activities: list[str] = []
+    for rel in relations:
+        src, tgt = rel["source"], rel["target"]
+        src_events = data.e2o_index.object_to_events.get(src, set())
+        tgt_events = data.e2o_index.object_to_events.get(tgt, set())
+        shared = src_events & tgt_events
+        if shared:
+            # First shared event (by timestamp) is the binding event
+            event_ts = {}
+            event_act = {}
+            for _, row in data.events.iterrows():
+                if row["event_id"] in shared:
+                    event_ts[row["event_id"]] = row["timestamp"]
+                    event_act[row["event_id"]] = row["activity"]
+            if event_ts:
+                first_eid = min(event_ts, key=event_ts.get)
+                activities.append(event_act[first_eid])
+
+    if activities:
+        return Counter(activities).most_common(1)[0][0]
+    return ""
