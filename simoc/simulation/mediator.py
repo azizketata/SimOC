@@ -77,6 +77,15 @@ class InteractionMediator:
         # Batch state
         self._batch_queues: dict[tuple[str, str], list[tuple]] = defaultdict(list)
 
+        # Binding state: agents ready to be bound into a new object
+        # Key: (source_type, target_type) from binding policy
+        # Value: list of target agents ready for binding
+        self._binding_queues: dict[tuple[str, str], list] = defaultdict(list)
+
+        # Precompute binding thresholds from discovered cardinality
+        self._binding_thresholds: dict[tuple[str, str], int] = {}
+        self._precompute_binding_thresholds()
+
         # ID generation
         self._id_counters: dict[str, int] = defaultdict(int)
 
@@ -278,20 +287,25 @@ class InteractionMediator:
                 self.config.max_sync_wait
             )
 
-            if not self._sync_events[gate_key].triggered:
-                logger.warning(
+            sync_succeeded = self._sync_events[gate_key].triggered
+
+            if not sync_succeeded:
+                logger.debug(
                     "Sync timeout for %s at %s after %.0fs",
                     agent.object_id,
                     activity,
                     self.config.max_sync_wait,
                 )
 
-            # Add sync delay
-            delay = float(rule.sync_delay_dist.rvs(size=1, rng=self.rng)[0])
-            if delay > 0:
-                yield self.env.timeout(delay)
+            # Add sync delay only if sync actually succeeded
+            if sync_succeeded:
+                delay = float(rule.sync_delay_dist.rvs(size=1, rng=self.rng)[0])
+                if delay > 0:
+                    yield self.env.timeout(delay)
 
-            return [(cid, synced_type) for cid in synced_children]
+            # Return only children that actually reported ready
+            ready = self._sync_ready.get(gate_key, set())
+            return [(cid, synced_type) for cid in synced_children if cid in ready]
 
         return []
 
