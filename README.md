@@ -41,17 +41,17 @@ SimOC runs a 7-stage pipeline: (1) OCEL 2.0 ingestion and validation, (2) object
 
 ## Results
 
-Comparison on Knopp's OCEL 2.0 Order Management benchmark (21K events, 10.8K objects, 5-run mean ± std, 30-day simulation):
+Comparison on Knopp's OCEL 2.0 Order Management benchmark (21K events, 10.8K objects, 10-run mean ± std, 30-day simulation). All differences significant at p < 0.005 (Wilcoxon signed-rank).
 
 | Metric | SimOC | Flat Simod | Independent |
 |--------|-------|------------|-------------|
-| Activity freq. EMD ↓ | **0.59 ± 0.05** | 1.53 ± 0.04 | 0.80 ± 0.04 |
-| Arrival rate error ↓ | **0.25 ± 0.07** | 0.85 ± 0.00 | 0.60 ± 0.07 |
-| OC-DFG cosine sim. ↑ | 0.43 ± 0.06 | 0.16 ± 0.00 | **0.78 ± 0.02** |
+| Activity freq. EMD ↓ | **0.61 ± 0.06** | 1.55 ± 0.04 | 0.76 ± 0.04 |
+| Arrival rate error ↓ | **0.43 ± 0.04** | 0.85 ± 0.01 | 0.64 ± 0.06 |
+| OC-DFG cosine sim. ↑ | 0.35 ± 0.03 | 0.16 ± 0.00 | **0.78 ± 0.02** |
 | O2O fidelity ↑ | **0.17 ± 0.00** | 0.00 ± 0.00 | 0.00 ± 0.00 |
-| Cardinality KS ↑ | **0.16 ± 0.00** | 0.00 ± 0.00 | 0.00 ± 0.00 |
+| Cardinality KS ↑ | **0.14 ± 0.04** | 0.00 ± 0.00 | 0.00 ± 0.00 |
 
-SimOC is the only method that preserves object-to-object relational structure (O2O fidelity, cardinality) while maintaining competitive activity-level fidelity. Flat Simod and Independent baselines cannot produce O2O relations at all.
+SimOC is the only method that produces object-to-object relations (O2O fidelity, cardinality). It significantly outperforms Flat Simod on all metrics and Independent on activity frequency, arrival rate, and all object-centric metrics. Independent achieves higher OC-DFG similarity because it replays per-type DFGs without cross-type synchronization delays — at the cost of zero O2O structural fidelity.
 
 ## Tests
 
