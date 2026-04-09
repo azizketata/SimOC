@@ -420,6 +420,95 @@ class InteractionMediator:
                 if sync_key in self.patterns.synchronization_rules:
                     self.signal_child_ready(agent, next_act)
 
+        # Check if this completion makes the agent eligible for binding
+        self._check_binding_readiness(agent, completed_activity)
+
+    # ------------------------------------------------------------------
+    # Binding
+    # ------------------------------------------------------------------
+
+    def _check_binding_readiness(self, agent: Agent, completed_activity: str) -> None:
+        """Check if an agent is ready to be bound into a new object."""
+        for (src_type, tgt_type), policy in self.patterns.binding_policies.items():
+            if agent.object_type != tgt_type:
+                continue
+
+            # The binding activity is where the new object is created.
+            # The target agent is ready when it reaches the activity
+            # immediately BEFORE the binding activity in its DFG.
+            binding_act = policy.binding_activity
+            dfg = self.behavioral.type_dfgs.get(tgt_type)
+            if dfg is None:
+                continue
+
+            # Check if the completed activity leads to the binding activity
+            branching = self.get_branching(tgt_type)
+            if branching and completed_activity in branching.probabilities:
+                if binding_act in branching.probabilities[completed_activity]:
+                    # This agent just completed the pre-binding activity
+                    key = (src_type, tgt_type)
+                    self._binding_queues[key].append(agent)
+
+                    # Check if enough targets have accumulated
+                    threshold = self._binding_thresholds.get(key, 2)
+                    if len(self._binding_queues[key]) >= threshold:
+                        self._execute_binding(key, policy)
+
+    def _execute_binding(self, key: tuple[str, str], policy) -> None:
+        """Create a new source-type object and bind target objects to it."""
+        from simoc.simulation.agent import RootAgent
+
+        src_type, tgt_type = key
+        queue = self._binding_queues[key]
+        threshold = self._binding_thresholds.get(key, 2)
+
+        # Take up to threshold targets from the queue
+        n_bind = min(len(queue), threshold)
+        bound_targets = queue[:n_bind]
+        self._binding_queues[key] = queue[n_bind:]
+
+        # Create the new source object (e.g., package)
+        new_id = self.generate_id(src_type)
+        new_agent = RootAgent(
+            object_id=new_id,
+            object_type=src_type,
+            env=self.env,
+            mediator=self,
+            rng=self.rng,
+        )
+        self.register(new_agent)
+
+        # Register O2O relations (source -> each target)
+        for target in bound_targets:
+            self._o2o_relations.append(
+                SimulatedO2O(
+                    source_id=new_id,
+                    source_type=src_type,
+                    target_id=target.object_id,
+                    target_type=tgt_type,
+                    qualifier="contains",
+                )
+            )
+
+        # Log the binding event (e.g., "create package")
+        co_objects = [(t.object_id, t.object_type) for t in bound_targets]
+        event = SimulatedEvent(
+            event_id=self.next_event_id(),
+            activity=policy.binding_activity,
+            timestamp=self.env.now,
+            objects=[(new_id, src_type)] + co_objects,
+        )
+        self.record_event(event)
+
+        # Start the new object's lifecycle (if it has a DFG)
+        if src_type in self.behavioral.type_dfgs:
+            self.env.process(new_agent.lifecycle())
+
+        logger.debug(
+            "Binding: created %s with %d %s targets at t=%.0f",
+            new_id, n_bind, tgt_type, self.env.now,
+        )
+
     # ------------------------------------------------------------------
     # Output collection
     # ------------------------------------------------------------------

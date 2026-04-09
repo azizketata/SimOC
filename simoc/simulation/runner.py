@@ -103,10 +103,17 @@ class SimulationRunner:
         )
 
     def _get_root_types(self) -> list[str]:
+        # Root types that have arrival models AND are not created by binding
+        binding_created = {
+            src_type
+            for (src_type, _) in self.patterns.binding_policies
+        }
         return [
             t
             for t, role in self.discovery.type_classification.classification.items()
             if role == "root"
+            and t in self.behavioral.arrival_models
+            and t not in binding_created
         ]
 
     def _root_generator(
