@@ -45,11 +45,12 @@ Comparison on Knopp's OCEL 2.0 Order Management benchmark (21K events, 10.8K obj
 
 | Metric | SimOC | Flat Simod | Independent |
 |--------|-------|------------|-------------|
-| Activity freq. EMD ↓ | **0.62 ± 0.04** | 1.55 ± 0.04 | 0.82 ± 0.04 |
-| Arrival rate error ↓ | **0.46 ± 0.05** | 0.85 ± 0.01 | 0.65 ± 0.07 |
-| OC-DFG cosine sim. ↑ | 0.36 ± 0.03 | 0.16 ± 0.00 | **0.80 ± 0.01** |
+| Activity freq. EMD ↓ | **0.57 ± 0.01** | 1.55 ± 0.04 | 0.75 ± 0.04 |
+| Arrival rate error ↓ | **0.55 ± 0.03** | 0.85 ± 0.01 | 0.61 ± 0.07 |
+| OC-DFG cosine sim. ↑ | 0.35 ± 0.01 | 0.16 ± 0.00 | **0.78 ± 0.02** |
 | O2O fidelity ↑ | **0.17 ± 0.00** | 0.00 ± 0.00 | 0.00 ± 0.00 |
-| Cardinality KS ↑ | **0.14 ± 0.03** | 0.00 ± 0.00 | 0.00 ± 0.00 |
+| Cardinality KS ↑ | **0.14 ± 0.04** | 0.00 ± 0.00 | 0.00 ± 0.00 |
+| Conv./div. KS ↑ | **0.28 ± 0.01** | 0.00 ± 0.00 | 0.00 ± 0.00 |
 
 SimOC is the only method that produces object-to-object relations (O2O fidelity, cardinality) with learned binding affinity. It significantly outperforms Flat Simod on all metrics and Independent on activity frequency, arrival rate, and all object-centric metrics. Independent achieves higher OC-DFG similarity by replaying per-type DFGs without cross-type synchronization — at the cost of zero O2O structural fidelity.
 
