@@ -374,64 +374,76 @@ def discover_release(data: OCELData) -> dict[tuple[str, str], ReleaseRule]:
     """Discover where co-traveling object types decouple."""
     oid_to_type = data.objects.set_index("object_id")["object_type"].to_dict()
 
-    # Find all co-occurring instance pairs and their shared events
-    co_pairs: dict[tuple[str, str], list[tuple[str, str, str]]] = defaultdict(list)
-    # Key: (type_1, type_2) sorted. Value: list of (oid1, oid2, last_shared_eid)
-
-    # Build pair co-occurrences
-    pair_events: dict[tuple[str, str], list[str]] = defaultdict(list)
-    for eid, oids in data.e2o_index.event_to_objects.items():
-        oids_list = sorted(oids)
-        for i in range(len(oids_list)):
-            for j in range(i + 1, len(oids_list)):
-                oid1, oid2 = oids_list[i], oids_list[j]
-                t1, t2 = oid_to_type.get(oid1, ""), oid_to_type.get(oid2, "")
-                if t1 == t2:
-                    continue  # same type pairs not interesting for release
-                # Normalize order
-                if t1 > t2:
-                    oid1, oid2 = oid2, oid1
-                    t1, t2 = t2, t1
-                pair_events[(oid1, oid2)].append(eid)
-
-    # Build event timestamp lookup
+    # Build event timestamp and activity lookup
     event_ts: dict[str, pd.Timestamp] = {}
     event_act: dict[str, str] = {}
     for _, row in data.events.iterrows():
         event_ts[row["event_id"]] = row["timestamp"]
         event_act[row["event_id"]] = row["activity"]
 
-    # For each instance pair, find the last co-occurrence
+    # Build per-object: last event timestamp and last event id
+    obj_last_ts: dict[str, pd.Timestamp] = {}
+    for oid, lc in data.lifecycles.items():
+        if lc:
+            obj_last_ts[oid] = lc[-1][2]
+
+    # For efficiency, work at the TYPE-PAIR level with sampling.
+    # For each event, group objects by type. For each cross-type pair
+    # of types in the event, track the last co-occurrence per instance pair.
+    # Use a compact representation: for each (oid1, oid2), only keep the
+    # last shared event (overwrite as we scan chronologically).
+    unique_types = sorted(set(oid_to_type.values()))
+    type_pairs_to_check = [
+        (t1, t2) for i, t1 in enumerate(unique_types)
+        for t2 in unique_types[i + 1:]
+    ]
+
+    # For each type pair, sample instance pairs to check (cap at 200 for perf)
     release_candidates: dict[tuple[str, str], list[dict]] = defaultdict(list)
 
-    for (oid1, oid2), shared_eids in pair_events.items():
-        t1 = oid_to_type[oid1]
-        t2 = oid_to_type[oid2]
-        type_key = (t1, t2) if t1 <= t2 else (t2, t1)
+    for t1, t2 in type_pairs_to_check:
+        # Sample instances for efficiency (cap each type at 100)
+        t1_all = [oid for oid, t in oid_to_type.items() if t == t1]
+        t2_all = [oid for oid, t in oid_to_type.items() if t == t2]
 
-        # Find last shared event by timestamp
-        last_eid = max(shared_eids, key=lambda e: event_ts[e])
-        last_ts = event_ts[last_eid]
-        last_act = event_act[last_eid]
+        import random as _random
+        _rng = _random.Random(42)
+        t1_sample = set(t1_all if len(t1_all) <= 100 else _rng.sample(t1_all, 100))
+        t2_sample = set(t2_all if len(t2_all) <= 100 else _rng.sample(t2_all, 100))
 
-        # Check if either object continues after the release event
-        lc1 = data.lifecycles.get(oid1, [])
-        lc2 = data.lifecycles.get(oid2, [])
+        # Find last co-occurrence per sampled pair
+        pair_last: dict[tuple[str, str], str] = {}
+        for eid, oids in data.e2o_index.event_to_objects.items():
+            oids_t1 = [o for o in oids if o in t1_sample]
+            oids_t2 = [o for o in oids if o in t2_sample]
+            if not oids_t1 or not oids_t2:
+                continue
+            ts = event_ts[eid]
+            for o1 in oids_t1:
+                for o2 in oids_t2:
+                    key = (o1, o2)
+                    if key not in pair_last or ts > event_ts[pair_last[key]]:
+                        pair_last[key] = eid
 
-        o1_continues = any(ts > last_ts for _, _, ts in lc1)
-        o2_continues = any(ts > last_ts for _, _, ts in lc2)
+        if not pair_last:
+            continue
 
-        if o1_continues or o2_continues:
-            # This is a release
-            release_candidates[type_key].append(
-                {
-                    "oid1": oid1,
-                    "oid2": oid2,
-                    "release_eid": last_eid,
-                    "release_activity": last_act,
-                }
-            )
-        # else: joint termination — not a release
+        for (o1, o2), last_eid in pair_last.items():
+            last_ts_val = event_ts[last_eid]
+            last_act = event_act[last_eid]
+
+            o1_continues = obj_last_ts.get(o1, last_ts_val) > last_ts_val
+            o2_continues = obj_last_ts.get(o2, last_ts_val) > last_ts_val
+
+            if o1_continues or o2_continues:
+                release_candidates[(t1, t2)].append(
+                    {
+                        "oid1": o1,
+                        "oid2": o2,
+                        "release_eid": last_eid,
+                        "release_activity": last_act,
+                    }
+                )
 
     # Aggregate release rules per type pair
     rules: dict[tuple[str, str], ReleaseRule] = {}
