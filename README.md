@@ -54,7 +54,7 @@ SimOC runs a 7-stage pipeline: (1) OCEL 2.0 ingestion and validation, (2) object
 
 ## Results
 
-Comparison on Knopp's OCEL 2.0 Order Management benchmark (21K events, 10.8K objects, 10-run mean ± std, 30-day simulation). All SimOC vs baseline differences significant at p < 0.005 (Wilcoxon signed-rank).
+Comparison on Knopp's OCEL 2.0 Order Management benchmark (21K events, 10.8K objects, 10-run mean ± std, 30-day simulation). All SimOC vs baseline differences significant at p < 0.05 (Wilcoxon signed-rank, actual p ∈ [0.002, 0.004]).
 
 | Metric | SimOC | Flat (single-type) | Independent |
 |--------|-------|------------|-------------|
