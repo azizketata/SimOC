@@ -42,6 +42,7 @@ desktop.ini
 # === Project-specific ===
 # Development guide (do NOT push to remote)
 SimOC_Development_Guide.docx
+SimOC_Paper_Writing_Guide.docx
 
 # Simulation outputs (can be large)
 output/
@@ -58,3 +59,5 @@ CLAUDE.local.md
 # === Distribution ===
 *.tar.gz
 *.zip
+
+paper_draft.md

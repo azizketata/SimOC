@@ -4,14 +4,27 @@ Agent-based simulation discovery for object-centric processes from OCEL 2.0 even
 
 SimOC automatically discovers per-object-type agent behaviors and cross-type interaction patterns (spawning, synchronization, binding, batching, release) from real event data, then simulates forward to produce synthetic OCEL 2.0 traces.
 
-| Feature | Knopp et al. (ICPM 2023) | AgentSimulator (ICPM 2024) | **SimOC** |
-|---------|--------------------------|---------------------------|-----------|
-| Discovers from event logs | Automated | Automated | Automated |
-| Object-centric (OCEL) | OCEL 2.0 | XES only | **OCEL 2.0** |
-| Agent-based architecture | OCPN tokens | Multi-agent | **Multi-agent** |
-| Agents = object types | N/A | Agents = resources | **Yes** |
-| Interaction patterns (spawn, sync, batch) | Partial (OCPN arcs) | No | **Yes** |
-| Produces synthetic OCEL 2.0 | Yes | XES | **Yes** |
+## The Gap
+
+Existing simulation discovery approaches either model a *single object type* or use *process-model-based* semantics. No existing approach models *multiple interacting object types as autonomous agents*:
+
+|                              | Single Object Type         | Multiple Interacting Types (Object-Centric) |
+|------------------------------|----------------------------|----------------------------------------------|
+| **Process-model-based sim.** | Simod (Chapela-Campa et al.) | Knopp et al. (ICPM 2023)                   |
+| **Agent-based sim.**         | AgentSimulator (Kirchdorfer et al.) | **SimOC (this project)**            |
+
+- **Simod** discovers BPMN models from single-case XES logs. One object type, no O2O relations.
+- **AgentSimulator** models resources as agents operating on a single object type. Handles concurrent cases, but agents are workers — not the objects themselves.
+- **Knopp et al.** discovers OCPN-based simulations from OCEL 2.0 using token semantics — not autonomous agents with interaction patterns.
+- **SimOC** models object types as agents (orders, items, packages) that spawn, synchronize, bind, batch, and release each other. First agent-based approach for object-centric simulation discovery.
+
+| Feature | Knopp et al. | AgentSimulator | **SimOC** |
+|---------|-------------|----------------|-----------|
+| Input format | OCEL 2.0 | XES | **OCEL 2.0** |
+| Simulation paradigm | OCPN tokens | Multi-agent (resources) | **Multi-agent (object types)** |
+| Agents represent | N/A | Resources/workers | **Objects (orders, items, packages)** |
+| Multiple interacting types | Via OCPN arcs | No | **Yes (5 interaction patterns)** |
+| Produces O2O relations | Yes | No | **Yes** |
 
 ## Installation
 
@@ -41,18 +54,17 @@ SimOC runs a 7-stage pipeline: (1) OCEL 2.0 ingestion and validation, (2) object
 
 ## Results
 
-Comparison on Knopp's OCEL 2.0 Order Management benchmark (21K events, 10.8K objects, 10-run mean ± std, 30-day simulation). All differences significant at p < 0.005 (Wilcoxon signed-rank).
+Comparison on Knopp's OCEL 2.0 Order Management benchmark (21K events, 10.8K objects, 10-run mean ± std, 30-day simulation). All SimOC vs baseline differences significant at p < 0.005 (Wilcoxon signed-rank).
 
 | Metric | SimOC | Flat Simod | Independent |
 |--------|-------|------------|-------------|
-| Activity freq. EMD ↓ | **0.57 ± 0.01** | 1.55 ± 0.04 | 0.75 ± 0.04 |
-| Arrival rate error ↓ | **0.55 ± 0.03** | 0.85 ± 0.01 | 0.61 ± 0.07 |
-| OC-DFG cosine sim. ↑ | 0.35 ± 0.01 | 0.16 ± 0.00 | **0.78 ± 0.02** |
+| Activity freq. EMD ↓ | **0.57 ± 0.01** | 1.57 ± 0.03 | 0.75 ± 0.05 |
+| OC-DFG cosine sim. ↑ | 0.36 ± 0.01 | 0.15 ± 0.00 | **0.75 ± 0.03** |
 | O2O fidelity ↑ | **0.17 ± 0.00** | 0.00 ± 0.00 | 0.00 ± 0.00 |
-| Cardinality KS ↑ | **0.14 ± 0.04** | 0.00 ± 0.00 | 0.00 ± 0.00 |
+| Cardinality KS ↑ | **0.14 ± 0.03** | 0.00 ± 0.00 | 0.00 ± 0.00 |
 | Conv./div. KS ↑ | **0.28 ± 0.01** | 0.00 ± 0.00 | 0.00 ± 0.00 |
 
-SimOC is the only method that produces object-to-object relations (O2O fidelity, cardinality) with learned binding affinity. It significantly outperforms Flat Simod on all metrics and Independent on activity frequency, arrival rate, and all object-centric metrics. Independent achieves higher OC-DFG similarity by replaying per-type DFGs without cross-type synchronization — at the cost of zero O2O structural fidelity.
+**SimOC is the only method that produces O2O relational structure** (fidelity, cardinality, convergence/divergence > 0). Flat Simod and Independent baselines cannot produce O2O relations at all. Independent achieves higher OC-DFG similarity by replaying per-type DFGs without cross-type coordination — at the cost of zero structural fidelity.
 
 ## Tests
 
@@ -63,11 +75,12 @@ pytest tests/ -v    # 155 tests across all 7 stages
 ## Citation
 
 ```bibtex
-@inproceedings{simoc2026,
-  title     = {{SimOC}: Agent-Based Simulation of Object-Centric Processes Discovered from {OCEL} 2.0 Event Logs},
+@article{simoc2025,
+  title     = {{SimOC}: Agent-Based Simulation of Object-Centric Processes
+               Discovered from {OCEL} 2.0 Event Logs},
   author    = {<authors>},
-  booktitle = {International Conference on Process Mining (ICPM)},
-  year      = {2026}
+  journal   = {Process Science},
+  year      = {2025}
 }
 ```
 
