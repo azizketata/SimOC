@@ -56,15 +56,15 @@ SimOC runs a 7-stage pipeline: (1) OCEL 2.0 ingestion and validation, (2) object
 
 Comparison on Knopp's OCEL 2.0 Order Management benchmark (21K events, 10.8K objects, 10-run mean ± std, 30-day simulation). All SimOC vs baseline differences significant at p < 0.005 (Wilcoxon signed-rank).
 
-| Metric | SimOC | Flat Simod | Independent |
+| Metric | SimOC | Flat (single-type) | Independent |
 |--------|-------|------------|-------------|
-| Activity freq. EMD ↓ | **0.57 ± 0.01** | 1.57 ± 0.03 | 0.75 ± 0.05 |
-| OC-DFG cosine sim. ↑ | 0.36 ± 0.01 | 0.15 ± 0.00 | **0.75 ± 0.03** |
-| O2O fidelity ↑ | **0.17 ± 0.00** | 0.00 ± 0.00 | 0.00 ± 0.00 |
-| Cardinality KS ↑ | **0.14 ± 0.03** | 0.00 ± 0.00 | 0.00 ± 0.00 |
+| Activity freq. EMD ↓ | **0.57 ± 0.01** | 1.57 ± 0.03 | 0.77 ± 0.03 |
+| OC-DFG cosine sim. ↑ | 0.35 ± 0.01 | 0.15 ± 0.00 | **0.78 ± 0.03** |
+| O2O fidelity ↑ | **0.15 ± 0.05** | 0.00 ± 0.00 | 0.00 ± 0.00 |
+| Cardinality KS ↑ | **0.13 ± 0.05** | 0.00 ± 0.00 | 0.00 ± 0.00 |
 | Conv./div. KS ↑ | **0.28 ± 0.01** | 0.00 ± 0.00 | 0.00 ± 0.00 |
 
-**SimOC is the only method that produces O2O relational structure** (fidelity, cardinality, convergence/divergence > 0). Flat Simod and Independent baselines cannot produce O2O relations at all. Independent achieves higher OC-DFG similarity by replaying per-type DFGs without cross-type coordination — at the cost of zero structural fidelity.
+**SimOC is the only method that produces O2O relational structure** (fidelity, cardinality, convergence/divergence > 0). Flat (single-type) and Independent baselines cannot produce O2O relations at all. Independent achieves higher OC-DFG similarity by replaying per-type DFGs without cross-type coordination — at the cost of zero structural fidelity.
 
 ## Tests
 
