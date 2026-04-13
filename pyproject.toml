@@ -22,6 +22,7 @@ dev = [
     "pytest-cov>=4.1",
     "matplotlib>=3.7",
     "jupyter>=1.0",
+    "streamlit>=1.30",
 ]
 
 [tool.pytest.ini_options]
